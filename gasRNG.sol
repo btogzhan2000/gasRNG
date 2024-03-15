@@ -47,7 +47,6 @@ contract gasRNG {
         bool deposit_partly_frozen;
         uint reward;
         bool requested_submit;
-        Session[] sessions;
     }
 
     mapping(address => Participant) public participants;
@@ -61,9 +60,15 @@ contract gasRNG {
         uint start_time;
         uint dealer_deposit;
         bytes32 root_T; // root of the merkle tree final
+        uint no_of_participants;
     }
 
-    Session public session = Session(false, 0, 0, 0, 0);
+    mapping(uint => Session) public sessions;
+
+    // sessions.
+    uint session_id = 0;
+    // Session public session = Session(false, 0, 0, 0, 0);
+
 
     uint public dealer_cheating_rewards = 0; 
     uint public session_rewards = 0; 
@@ -116,12 +121,12 @@ contract gasRNG {
     // }
 
     modifier no_active_session() {
-        require(!session.active, "There is an active session.");
+        require(!sessions[session_id].active, "There is an active session.");
         _;
     }
 
     modifier active_session() {
-        require(session.active, "There is no active session in progress.");
+        require(sessions[session_id].active, "There is no active session in progress.");
         _;
     }
 
@@ -147,47 +152,47 @@ contract gasRNG {
 
 
     modifier t2_in_progress() {
-        require(block.timestamp > session.start_time + t1 && block.timestamp <=session.start_time + t1 + t2, "Must be t2 period.");
+        require(block.timestamp > sessions[session_id].start_time + t1 && block.timestamp <=sessions[session_id].start_time + t1 + t2, "Must be t2 period.");
         _;
     }
 
     modifier t3_in_progress() {
-        require(block.timestamp > session.start_time + t1 + t2 && block.timestamp <=session.start_time + t1 + t2 + t3, "Must be t3 period.");
+        require(block.timestamp > sessions[session_id].start_time + t1 + t2 && block.timestamp <=sessions[session_id].start_time + t1 + t2 + t3, "Must be t3 period.");
         _;
     }
 
     modifier after_t3() {
-        require(block.timestamp > session.start_time + t1 + t2 + t3, "We can check if participant did not submit the value only after t3 period.");
+        require(block.timestamp > sessions[session_id].start_time + t1 + t2 + t3, "We can check if participant did not submit the value only after t3 period.");
         _;
     }
 
     modifier t4_in_progress() {
-        require(block.timestamp > session.start_time + t1 + t2 + t3 && block.timestamp <=session.start_time + t1 + t2 + t3 + t4, "Must be t4 period.");
+        require(block.timestamp > sessions[session_id].start_time + t1 + t2 + t3 && block.timestamp <=sessions[session_id].start_time + t1 + t2 + t3 + t4, "Must be t4 period.");
         _;
     }
 
     modifier t5_in_progress() {
-        require(block.timestamp > session.start_time + t1 + t2 + t3 + t4 && block.timestamp <=session.start_time + t1 + t2 + t3 + t4 + t5, "Must be t5 period.");
+        require(block.timestamp > sessions[session_id].start_time + t1 + t2 + t3 + t4 && block.timestamp <=sessions[session_id].start_time + t1 + t2 + t3 + t4 + t5, "Must be t5 period.");
         _;
     }
 
     modifier t6_in_progress() {
-        require(block.timestamp > session.start_time + t1 + t2 + t3 + t4 + t5 && block.timestamp <=session.start_time + t1 + t2 + t3 + t4 + t5 + t6, "Must be t6 period.");
+        require(block.timestamp > sessions[session_id].start_time + t1 + t2 + t3 + t4 + t5 && block.timestamp <=sessions[session_id].start_time + t1 + t2 + t3 + t4 + t5 + t6, "Must be t6 period.");
         _;
     }
 
     modifier after_t6() {
-        require(block.timestamp > session.start_time + t1 + t2 + t3 + t4 + t5 + t6, "We can check if dealer did not respond to all challenges only after t6 period.");
+        require(block.timestamp > sessions[session_id].start_time + t1 + t2 + t3 + t4 + t5 + t6, "We can check if dealer did not respond to all challenges only after t6 period.");
         _;
     }
 
     modifier t8_in_progress() {
-        require(block.timestamp > session.start_time + t1 + t2 + t3 + t4 + t5 +t6 + t7 && block.timestamp <=session.start_time + t1 + t2 + t3 + t4 + t5 + t6 + t7 + t8, "Must be t8 period.");
+        require(block.timestamp > sessions[session_id].start_time + t1 + t2 + t3 + t4 + t5 +t6 + t7 && block.timestamp <=sessions[session_id].start_time + t1 + t2 + t3 + t4 + t5 + t6 + t7 + t8, "Must be t8 period.");
         _;
     }
 
     modifier after_t8() {
-        require(block.timestamp > session.start_time + t1 + t2 + t3 + t4 + t5 +t6 + t7 + t8, "Dealer can end the session only after t8.");
+        require(block.timestamp > sessions[session_id].start_time + t1 + t2 + t3 + t4 + t5 +t6 + t7 + t8, "Dealer can end the session only after t8.");
         _;
     }
 
@@ -248,10 +253,15 @@ contract gasRNG {
     }
 
     function new_session() public payable only_dealer deposit_and_reward_paid_session no_active_session {
-        session.active = true;
-        session.reward = rho;
-        session.start_time = block.timestamp;
-        session.dealer_deposit = msg.value - rho; // >= d_prime
+
+        sessions[session_id] = Session(false, 0, 0, 0, 0, 0);
+
+        sessions[session_id].active = true;
+        sessions[session_id].reward = rho;
+        sessions[session_id].start_time = block.timestamp;
+        sessions[session_id].dealer_deposit = msg.value - rho; // >= d_prime
+
+        session_id += 1;
     }
 
     function withdraw() public registered no_active_session {
@@ -317,11 +327,11 @@ contract gasRNG {
 
         if (d_star > gas_usage/2) {
             participants[msg.sender].reward += (gas_usage/2);
-            session.dealer_deposit -= (gas_usage/2);
+            sessions[session_id].dealer_deposit -= (gas_usage/2);
         }
         else {
             participants[msg.sender].reward += d_star;
-            session.dealer_deposit -= d_star;
+            sessions[session_id].dealer_deposit -= d_star;
         }
     }
 
@@ -333,7 +343,7 @@ contract gasRNG {
 
     // Step 4: Merkle Tree Announcement
     function announce_root(bytes32 _root_T) public only_dealer active_session t4_in_progress {
-        session.root_T = _root_T;
+        sessions[session_id].root_T = _root_T;
     }
 
     // Step 5: On-chain Challenges
@@ -348,18 +358,18 @@ contract gasRNG {
 
         uint gas_before = gasleft();
 
-        bool proof_verified = verify_merkle_proof(_proof, session.root_T, _x, participants[_addr].index);
+        bool proof_verified = verify_merkle_proof(_proof, sessions[session_id].root_T, _x, participants[_addr].index);
         bool signature_verified = verify_signature(_addr, _x, _signature);
 
         // how to verify without a for loop that dealer provided response for all challenges??
 
         if (!proof_verified || !signature_verified) {
             // correct reward calculation later!!
-            dealer_cheating_rewards += (session.dealer_deposit / n);
-            session_rewards += (session.reward / n);
+            dealer_cheating_rewards += (sessions[session_id].dealer_deposit / n);
+            session_rewards += (sessions[session_id].reward / n);
 
-            session.dealer_deposit = 0;
-            session.active = false;
+            sessions[session_id].dealer_deposit = 0;
+            sessions[session_id].active = false;
 
             address challenging_participant = challenging_participants[_addr];
             participants[challenging_participant].deposit_partly_frozen = false;
@@ -389,11 +399,11 @@ contract gasRNG {
         require(!challenged_participants[_addr], "Dealer already responded to the challenge for this participant.");
         require(!dealer_responded_to_challenge, "This function can be called only once");
 
-        dealer_cheating_rewards += (session.dealer_deposit / n);
-        session_rewards += (session.reward / n);
+        dealer_cheating_rewards += (sessions[session_id].dealer_deposit / n);
+        session_rewards += (sessions[session_id].reward / n);
 
-        session.dealer_deposit = 0;
-        session.active = false;
+        sessions[session_id].dealer_deposit = 0;
+        sessions[session_id].active = false;
 
         address challenging_participant = challenging_participants[_addr];
         participants[challenging_participant].deposit_partly_frozen = false;
@@ -426,7 +436,8 @@ contract gasRNG {
     }
 
     function end_session() public after_t8 only_dealer {
-        session.active = false;
+        sessions[session_id].active = false;
+        sessions[session_id].no_of_participants = n;
     }
 
    
