@@ -61,6 +61,7 @@ contract gasRNG {
         uint dealer_deposit;
         bytes32 root_T; // root of the merkle tree final
         uint no_of_participants;
+        uint dealer_cheating_rewards;
     }
 
     mapping(uint => Session) public sessions;
@@ -70,7 +71,7 @@ contract gasRNG {
     // Session public session = Session(false, 0, 0, 0, 0);
 
 
-    uint public dealer_cheating_rewards = 0; 
+    // uint public dealer_cheating_rewards = 0; 
     uint public session_rewards = 0; 
 
     struct Result {
@@ -254,13 +255,13 @@ contract gasRNG {
 
     function new_session() public payable only_dealer deposit_and_reward_paid_session no_active_session {
 
-        sessions[session_id] = Session(false, 0, 0, 0, 0, 0);
+        sessions[session_id] = Session(false, 0, 0, 0, 0, 0, 0);
 
         sessions[session_id].active = true;
         sessions[session_id].reward = rho;
         sessions[session_id].start_time = block.timestamp;
         sessions[session_id].dealer_deposit = msg.value - rho; // >= d_prime
-
+        sessions[session_id].no_of_participants = n;
         session_id += 1;
     }
 
@@ -275,12 +276,13 @@ contract gasRNG {
         if (participants[msg.sender].deposit_frozen) {
             deposit_to_send = 0;
         }
-
-        uint amount_to_send = deposit_to_send + dealer_cheating_rewards + session_rewards - participants[msg.sender].reward_withdrawn + participants[msg.sender].reward;
+        // have a loop here through participants[msg.sender][session_id].rewards
+        // uint amount_to_send = deposit_to_send + dealer_cheating_rewards + session_rewards - participants[msg.sender].reward_withdrawn + participants[msg.sender].reward;
         
         // not correct actually :( participant may collect rewards for sessions he didn;t participate, how to avoid for loop???
-        participants[msg.sender].reward_withdrawn += dealer_cheating_rewards + session_rewards; // this is done to avoid for loops in sending rewards 
+        // participants[msg.sender].reward_withdrawn += dealer_cheating_rewards + session_rewards; // this is done to avoid for loops in sending rewards 
 
+        // sessions[session_id].dealer_cheating_rewards loop 
         participants[msg.sender].deposit = 0;
         participants[msg.sender].registered = false;
         participants[msg.sender].submit = 0;
@@ -291,8 +293,8 @@ contract gasRNG {
 
         n -= 1;
 
-        (bool sent, bytes memory data) = msg.sender.call{value: amount_to_send}("");
-        require(sent, "failed to send ether");
+        // (bool sent, bytes memory data) = msg.sender.call{value: amount_to_send}("");
+        // require(sent, "failed to send ether");
     }
 
     function participate_again() public payable deposit_paid_register registered only_participants no_active_session{
@@ -361,12 +363,10 @@ contract gasRNG {
         bool proof_verified = verify_merkle_proof(_proof, sessions[session_id].root_T, _x, participants[_addr].index);
         bool signature_verified = verify_signature(_addr, _x, _signature);
 
-        // how to verify without a for loop that dealer provided response for all challenges??
-
         if (!proof_verified || !signature_verified) {
             // correct reward calculation later!!
-            dealer_cheating_rewards += (sessions[session_id].dealer_deposit / n);
-            session_rewards += (sessions[session_id].reward / n);
+            sessions[session_id].dealer_cheating_rewards += (sessions[session_id].dealer_deposit / sessions[session_id].no_of_participants);
+            sessions[session_id].reward += (sessions[session_id].reward /  sessions[session_id].no_of_participants);
 
             sessions[session_id].dealer_deposit = 0;
             sessions[session_id].active = false;
@@ -399,8 +399,8 @@ contract gasRNG {
         require(!challenged_participants[_addr], "Dealer already responded to the challenge for this participant.");
         require(!dealer_responded_to_challenge, "This function can be called only once");
 
-        dealer_cheating_rewards += (sessions[session_id].dealer_deposit / n);
-        session_rewards += (sessions[session_id].reward / n);
+        sessions[session_id].dealer_cheating_rewards += (sessions[session_id].dealer_deposit / sessions[session_id].no_of_participants);
+        sessions[session_id].reward += (sessions[session_id].reward /  sessions[session_id].no_of_participants);
 
         sessions[session_id].dealer_deposit = 0;
         sessions[session_id].active = false;
@@ -435,7 +435,7 @@ contract gasRNG {
         }
     }
 
-    function end_session() public after_t8 only_dealer {
+    function end_session() public after_t8 only_dealer active_session {
         sessions[session_id].active = false;
         sessions[session_id].no_of_participants = n;
     }
